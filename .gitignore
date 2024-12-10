@@ -1,0 +1,5 @@
+wandb
+__pycache__
+local
+.ipynb_checkpoints
+.DS_Store
