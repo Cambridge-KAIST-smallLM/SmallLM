@@ -223,3 +223,70 @@ def initialize_model(attn_implementation, torch_dtype, tokenizer):
     )
 
     return model
+
+class OutputEmbeddingSelectiveUpdate(AutoModelForCausalLM):
+    def __init__(self, config, vocab_size, num_tokens_update):
+        super().__init__(config)
+        self.num_tokens_to_update = num_tokens_update
+        self.token_frequencies = torch.zeros(vocab_size, dtype=torch.float32, device=self.device)
+
+    def forward(self, input_ids, *args, **kwargs):
+        # Update token frequencies
+        batch_tokens = input_ids.view(-1)
+        token_counts = torch.bincount(batch_tokens, minlength=self.token_frequencies.size(0))
+        self.token_frequencies += token_counts.float()
+
+        # Forward pass
+        outputs = super().forward(input_ids=input_ids, *args, **kwargs)
+
+        # Hook to modify gradients of the output embeddings
+        def selective_update_hook(grad):
+            token_probs = self.token_frequencies ** 0.75
+            token_probs /= token_probs.sum()
+            selected_tokens = torch.multinomial(token_probs, self.num_tokens_to_update, replacement=False)
+            mask = torch.zeros_like(grad, dtype=torch.bool)
+            mask[selected_tokens] = True
+            grad.mul_(mask.float())
+            return grad
+
+        self.lm_head.weight.register_hook(selective_update_hook)
+        return outputs
+    
+def initialized_model_proposed_method(attn_implementation, torch_dtype, tokenizer, num_tokens_update):
+    """Initialize a LigerKernel-based model from scratch with frequency-based selective updates."""
+
+    config_dict = {
+        "_name_or_path": "JW17/SmolLM-14m-v0.1",
+        "architectures": ["LlamaForCausalLM"],
+        "attention_bias": False,
+        "attention_dropout": 0.0,
+        "bos_token_id": 0,
+        "eos_token_id": 0,
+        "hidden_act": "gelu",
+        "hidden_size": 128,
+        "initializer_range": 0.02,
+        "intermediate_size": 512,
+        "is_llama_config": True,
+        "max_position_embeddings": 2048,
+        "model_type": "llama",
+        "num_attention_heads": 4,
+        "num_hidden_layers": 6,
+        "num_key_value_heads": 4,
+        "pretraining_tp": 1,
+        "rms_norm_eps": 1e-05,
+        "rope_interleaved": False,
+        "rope_scaling": None,
+        "rope_theta": 100000,
+        "tie_word_embeddings": False,
+        "torch_dtype": "bfloat16",
+        "use_cache": True,
+        "vocab_size": tokenizer.vocab_size,
+        "flash_attn": True
+    }
+
+    config = LlamaConfig.from_dict(
+        config_dict=config_dict
+    )
+
+    return OutputEmbeddingSelectiveUpdate(config, config['vocab_size'], num_tokens_update)
+
