@@ -55,7 +55,7 @@ def is_openai_format(messages: Any) -> bool:
 def map_chat_template_by_task(
     example,
     tokenizer,
-    training_type: Literal["SFT", "RM", "ORPO", "DPO", "LINEAR", "PRETRAIN"],
+    training_type: Literal["SFT", "RM", "ORPO", "DPO", "LINEAR", "PRETRAIN", "PROPOSED"],
     auto_insert_empty_system_msg: bool = False,
 ):
     ### TODO: Handle chat templates with inherent errors
@@ -69,7 +69,7 @@ def map_chat_template_by_task(
             tokenize=False,
             add_generation_prompt=False,
         )
-    elif training_type.lower() == "pretrain":
+    elif training_type.lower() in ['pretrain','proposed']:
         example['input_ids'] = torch.tensor(example['input_ids'])
         example['labels'] = torch.tensor(example['input_ids'])
     elif training_type.lower() == "rm":

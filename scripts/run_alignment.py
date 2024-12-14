@@ -39,12 +39,7 @@ from modules import (
     print_sample_items,
     initialize_reward_model_head,
     DEFAULT_CHAT_TEMPLATE,
-    LinearRewardTrainer,
     initialize_model,
-    CustomLossTrainer,
-    zloss_func,
-    REINFORCETRConfig,
-    REINFORCETRTainer,
     initialized_model_proposed_method
 )
 
@@ -217,7 +212,7 @@ def main(model_args, data_args, training_args, training_type: str, loss_type_tes
             tokenizer=tokenizer,
             callbacks=callbacks,
         )
-    elif training_type.lower() in ['pretrained', 'proposed']:
+    elif training_type.lower() in ['pretrain', 'proposed']:
         training_args.lr_scheduler_kwargs = {
             "num_stable_steps": 89000,
             "num_decay_steps": 10000
