@@ -15,6 +15,8 @@ from .utils import (
     initialize_model,
     initialize_reward_model_head
 )
+from .liger_kernel.functions import liger_cross_entropy_z_loss, LigerCrossEntropyLosswithZ
+from .liger_kernel.apply_liger import apply_liger_kernel_to_llama_with_z_loss
 
 __all__ = [
     "GenerationArguments",
@@ -30,4 +32,7 @@ __all__ = [
     "DEFAULT_CHAT_TEMPLATE", 
     "initialize_reward_model_head",
     "initialize_model",
+    "liger_cross_entropy_z_loss",
+    "apply_liger_kernel_to_llama_with_z_loss",
+    "LigerCrossEntropyLosswithZ"
 ]
