@@ -18,7 +18,7 @@ import torch
 import random
 import numpy as np
 import torch.nn as nn
-from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM, LlamaConfig
+from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM, LlamaConfig, LlamaForCausalLM
 from typing import Any, List, Literal
 
 
@@ -224,33 +224,66 @@ def initialize_model(attn_implementation, torch_dtype, tokenizer):
 
     return model
 
-class OutputEmbeddingSelectiveUpdate(AutoModelForCausalLM):
-    def __init__(self, config, vocab_size, num_tokens_update):
+
+
+class OutputEmbeddingSelectiveUpdate(LlamaForCausalLM):
+    def __init__(self, config, vocab_size, num_tokens_to_update):
         super().__init__(config)
-        self.num_tokens_to_update = num_tokens_update
-        self.token_frequencies = torch.zeros(vocab_size, dtype=torch.float32, device=self.device)
+        self.num_tokens_to_update = num_tokens_to_update
+        self.token_frequencies = torch.zeros(vocab_size, dtype=torch.float32, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+        self.world_size = torch.distributed.get_world_size() if torch.distributed.is_initialized() else 1
 
+    def calculate_global_token_frequencies(self, input_ids):
+        """
+        Calculate token frequencies for the entire batch across all GPUs.
+        """
+        # Step 1: Calculate local token frequencies
+        batch_tokens = input_ids.view(-1)  # Flatten the input tensor
+        local_token_counts = torch.bincount(batch_tokens, minlength=self.token_frequencies.size(0)).float()
+
+        # Step 2: Synchronize token frequencies across GPUs
+        if torch.distributed.is_initialized():
+            torch.distributed.all_reduce(local_token_counts, op=torch.distributed.ReduceOp.SUM)
+
+        # Now `local_token_counts` contains the global token frequencies across all GPUs
+        return local_token_counts
+
+        
     def forward(self, input_ids, *args, **kwargs):
-        # Update token frequencies
-        batch_tokens = input_ids.view(-1)
-        token_counts = torch.bincount(batch_tokens, minlength=self.token_frequencies.size(0))
-        self.token_frequencies += token_counts.float()
 
+        batch_token_frequencies = self.calculate_global_token_frequencies(input_ids)
+        self.token_frequencies += batch_token_frequencies
+        #print('frequency_merged:', self.token_frequencies)
         # Forward pass
         outputs = super().forward(input_ids=input_ids, *args, **kwargs)
 
         # Hook to modify gradients of the output embeddings
         def selective_update_hook(grad):
+            #print('gradient:', grad)
             token_probs = self.token_frequencies ** 0.75
             token_probs /= token_probs.sum()
             selected_tokens = torch.multinomial(token_probs, self.num_tokens_to_update, replacement=False)
+            #print('selected_tokens:', selected_tokens)
             mask = torch.zeros_like(grad, dtype=torch.bool)
             mask[selected_tokens] = True
+            #print('mask:', mask.float())
             grad.mul_(mask.float())
+            #print('masked_gradient:', grad[187], grad[20])
             return grad
 
         self.lm_head.weight.register_hook(selective_update_hook)
         return outputs
+
+    @classmethod
+    def from_config(cls, config, vocab_size, num_tokens_to_update, torch_dtype=None, attn_implementation=None):
+        model = AutoModelForCausalLM.from_config(
+            config=config,
+            torch_dtype=torch_dtype,
+            attn_implementation=attn_implementation,
+        )
+        model.num_tokens_to_update = num_tokens_to_update
+        model.token_frequencies = torch.zeros(vocab_size, dtype=torch.float32, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+        return cls(model.config, vocab_size, num_tokens_to_update)
     
 def initialized_model_proposed_method(attn_implementation, torch_dtype, tokenizer, num_tokens_update):
     """Initialize a LigerKernel-based model from scratch with frequency-based selective updates."""
@@ -288,5 +321,7 @@ def initialized_model_proposed_method(attn_implementation, torch_dtype, tokenize
         config_dict=config_dict
     )
 
-    return OutputEmbeddingSelectiveUpdate(config, config['vocab_size'], num_tokens_update)
+    model = OutputEmbeddingSelectiveUpdate.from_config(config, config.vocab_size, num_tokens_update,torch_dtype=torch_dtype,
+        attn_implementation=attn_implementation)
 
+    return model
