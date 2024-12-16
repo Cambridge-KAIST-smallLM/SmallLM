@@ -99,6 +99,8 @@ def main(model_args, data_args, training_args, training_type: str, loss_type_tes
     if training_type.lower() != 'rm':
         if training_type == "PRETRAIN":
             model = initialize_model(model_args.attn_implementation, torch_dtype, tokenizer)
+        if training_type == "PROPOSED":
+            model = initialized_model_proposed_method(model_args.attn_implementation, torch_dtype, tokenizer, num_tokens_update=500)
         else:
             model = model_wrapper.from_pretrained(
                 model_args.model_name_or_path,
@@ -138,7 +140,7 @@ def main(model_args, data_args, training_args, training_type: str, loss_type_tes
 
     # Preprocess dataset
     column_names = list(dataset.features)
-    if training_type != "PRETRAIN":
+    if training_type not in ("PRETRAIN", "PROPOSED"):
         preprocessed_dataset = dataset.map(
             map_chat_template_by_task,
             fn_kwargs={
@@ -212,7 +214,7 @@ def main(model_args, data_args, training_args, training_type: str, loss_type_tes
             tokenizer=tokenizer,
             callbacks=callbacks,
         )
-    elif training_type.lower() == 'pretrain':
+    elif training_type.lower() in ['pretrain', 'proposed']:
         training_args.lr_scheduler_kwargs = {
             "num_stable_steps": 89000,
             "num_decay_steps": 10000
@@ -297,8 +299,11 @@ if __name__ == "__main__":
     elif training_type == 'PRETRAIN':
         config_type = TrainingArguments
         base_trainer = Trainer
+    elif training_type == 'PROPOSED':
+        config_type = TrainingArguments
+        base_trainer = Trainer
     else:
-        raise Exception("Please check the training method. You should set it to one of: ORPO, SFT, RM, LINEAR")
+        raise Exception("Please check the training method. You should set it to one of: ORPO, SFT, RM, LINEAR, PRETRAIN")
 
     # Parse arguments
     parser = H4ArgumentParser((ModelArguments, DataArguments, config_type))
