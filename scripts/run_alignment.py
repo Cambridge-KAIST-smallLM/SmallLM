@@ -39,7 +39,9 @@ from modules import (
     initialize_reward_model_head,
     DEFAULT_CHAT_TEMPLATE,
     initialize_model,
-    apply_liger_kernel_to_llama_with_z_loss
+    apply_liger_kernel_to_llama_with_z_loss,
+    initialized_model_proposed_method
+    
 )
 
 

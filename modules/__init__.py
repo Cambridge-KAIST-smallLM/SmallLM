@@ -35,5 +35,6 @@ __all__ = [
     "initialize_model",
     "liger_cross_entropy_z_loss",
     "apply_liger_kernel_to_llama_with_z_loss",
-    "LigerCrossEntropyLosswithZ"
+    "LigerCrossEntropyLosswithZ",
+    "initialized_model_proposed_method"
 ]
