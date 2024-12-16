@@ -16,11 +16,11 @@ def liger_cross_entropy_z_loss(
     reduce=None,
     reduction: str = "mean",
     label_smoothing: float = 0.0,
-    lse_square_scale: float = 0.0,
+    lse_square_scale: float = -1e-4,
     softcap: Optional[float] = None,
-    return_z_loss: bool = True,
+    return_z_loss: bool = False,
 ):
-    loss, z_loss = LigerCrossEntropyFunction.apply(
+    loss, _ = LigerCrossEntropyFunction.apply(
         input,
         target,
         ignore_index,
@@ -30,17 +30,17 @@ def liger_cross_entropy_z_loss(
         softcap,
         return_z_loss,
     )
-    return loss + z_loss
+    return loss
 
 class LigerCrossEntropyLosswithZ(torch.nn.Module):
     def __init__(
         self,
         ignore_index: int = -100,
-        lse_square_scale: float = 0.0,
+        lse_square_scale: float = -1e-4,
         label_smoothing: float = 0.0,
         reduction: str = "mean",
         softcap: Optional[float] = None,
-        return_z_loss: bool = True,
+        return_z_loss: bool = False,
     ):
         super().__init__()
         assert (label_smoothing >= 0) and (
@@ -65,7 +65,7 @@ class LigerCrossEntropyLosswithZ(torch.nn.Module):
         self.return_z_loss = return_z_loss
 
     def forward(self, _input: torch.Tensor, target: torch.Tensor):
-        loss, z_loss = LigerCrossEntropyFunction.apply(
+        loss, _ = LigerCrossEntropyFunction.apply(
             _input,
             target,
             self.ignore_index,
@@ -75,4 +75,4 @@ class LigerCrossEntropyLosswithZ(torch.nn.Module):
             self.softcap,
             self.return_z_loss,
         )
-        return loss + z_loss
+        return loss
