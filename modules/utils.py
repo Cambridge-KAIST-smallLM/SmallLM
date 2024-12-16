@@ -188,7 +188,7 @@ def initialize_model(attn_implementation, torch_dtype, tokenizer):
         "attention_dropout": 0.0,
         "bos_token_id": 0,
         "eos_token_id": 0,
-        "hidden_act": "gelu",
+        "hidden_act": "silu",
         "hidden_size": 128,
         "initializer_range": 0.02,
         "intermediate_size": 512,

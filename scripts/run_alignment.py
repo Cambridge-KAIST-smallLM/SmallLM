@@ -36,11 +36,10 @@ from modules import (
     H4ArgumentParser,
     ModelArguments,
     map_chat_template_by_task,
-    print_sample_items,
     initialize_reward_model_head,
     DEFAULT_CHAT_TEMPLATE,
     initialize_model,
-    initialized_model_proposed_method
+    apply_liger_kernel_to_llama_with_z_loss
 )
 
 
@@ -91,6 +90,9 @@ def main(model_args, data_args, training_args, training_type: str, loss_type_tes
     torch_dtype = (
         model_args.torch_dtype if model_args.torch_dtype in ["auto", None] else getattr(torch, model_args.torch_dtype)
     )
+
+    if training_type.lower() == 'pretrain' and loss_type_test.lower() == 'zloss':
+        apply_liger_kernel_to_llama_with_z_loss(cross_entropy=True, fused_linear_cross_entropy=False)
 
     # Load Model
     model_wrapper = AutoLigerKernelForCausalLM if model_args.use_liger_lm else AutoModelForCausalLM
@@ -227,7 +229,6 @@ def main(model_args, data_args, training_args, training_type: str, loss_type_tes
             processing_class=tokenizer,
             train_dataset=preprocessed_dataset,
             data_collator=data_collator,
-            compute_loss_func = zloss_func if loss_type_test == "ZLOSS" else None
         )
     else:
         trainer = base_trainer(
@@ -295,9 +296,6 @@ if __name__ == "__main__":
     elif training_type == 'RM':
         config_type = RewardConfig
         base_trainer = RewardTrainer
-    elif training_type == 'LINEAR':
-        config_type = ORPOConfig
-        base_trainer = LinearRewardTrainer
     elif training_type == 'PRETRAIN':
         config_type = TrainingArguments
         base_trainer = Trainer
