@@ -258,7 +258,7 @@ class OutputEmbeddingSelectiveUpdate(LlamaForCausalLM):
 
         # Progress after warm-up
         progress = (self.global_step - self.warmup_steps) / (self.max_steps - self.warmup_steps)
-        k = 3  # Exponential steepness
+        #k = 3   Exponential steepness
         progress_tensor = torch.tensor(progress, dtype=torch.float32, device="cuda" if torch.cuda.is_available() else "cpu")
         scaling_factor = torch.clamp(progress_tensor, min=0.0, max=1.0)
         #scaling_factor = 1 - torch.exp(-k * progress_tensor)
@@ -283,7 +283,7 @@ class OutputEmbeddingSelectiveUpdate(LlamaForCausalLM):
 
             # Transfer token frequencies to GPU
                 token_probs = self.token_frequencies.to(grad.device, dtype=grad.dtype, non_blocking=True)
-                token_probs = token_probs ** 0.75
+                #token_probs = token_probs ** 0.75
                 token_probs /= token_probs.sum()
 
             # Compute scaling factor
