@@ -226,16 +226,16 @@ def initialize_model(attn_implementation, torch_dtype, tokenizer):
 
 
 class OutputEmbeddingSelectiveUpdate(LlamaForCausalLM):
-    def __init__(self, config, vocab_size, num_tokens_to_update, max_steps=10000):
+    def __init__(self, config, vocab_size, training_args, max_steps=100000):
         super().__init__(config)
-        self.num_tokens_to_update = num_tokens_to_update
-        self.token_frequencies = torch.zeros(
-            vocab_size,
-            dtype=torch.float32,
-            device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-        )
+
+        # Store token frequencies on CPU to save GPU memory
+        self.token_frequencies = torch.zeros(vocab_size, dtype=torch.float32, device="cpu")
         self.global_step = 0  # Initialize global_step
-        self.max_steps = max_steps  # Maximum number of training steps for scheduling
+        self.max_steps = max_steps  # Total training steps
+
+        # Extract warmup_steps from training_args
+        self.warmup_steps = training_args.warmup_steps or int(0.1 * max_steps)
 
     def set_step(self, step):
         """
@@ -243,74 +243,88 @@ class OutputEmbeddingSelectiveUpdate(LlamaForCausalLM):
         """
         self.global_step = step
 
-    def calculate_global_token_frequencies(self, input_ids):
+    def calculate_batch_token_frequencies(self, input_ids):
         """
-        Calculate token frequencies for the entire batch across all GPUs.
+        Calculate token frequencies for the current batch.
         """
-        batch_tokens = input_ids.reshape(-1)  # Flatten the input tensor
-        local_token_counts = torch.bincount(batch_tokens, minlength=self.token_frequencies.size(0)).float()
-
-        if torch.distributed.is_initialized():
-            torch.distributed.all_reduce(local_token_counts, op=torch.distributed.ReduceOp.SUM)
-
-        return local_token_counts
+        batch_tokens = input_ids.detach().to("cpu").reshape(-1)
+        batch_token_counts = torch.bincount(batch_tokens, minlength=self.token_frequencies.size(0)).float()
+        return batch_token_counts
 
     def gradient_weighting_schedule(self):
         """
-        Compute the scaling factor for gradient weighting based on the training progress.
+        Exponential schedule: Gradually increase masking after the warm-up phase.
         """
-        progress = self.global_step / self.max_steps  # Normalize progress to [0, 1]
-        return progress ** 2  # Quadratic schedule: stronger weighting as training progresses
+
+        # Progress after warm-up
+        progress = (self.global_step - self.warmup_steps) / (self.max_steps - self.warmup_steps)
+        k = 3  # Exponential steepness
+        progress_tensor = torch.tensor(progress, dtype=torch.float32, device="cuda" if torch.cuda.is_available() else "cpu")
+        scaling_factor = torch.clamp(progress_tensor, min=0.0, max=1.0)
+        #scaling_factor = 1 - torch.exp(-k * progress_tensor)
+        return scaling_factor
 
     def forward(self, input_ids, *args, **kwargs):
         labels = input_ids[:, 1:].contiguous()  # Next-token labels
-        input_ids = input_ids[:, :-1].contiguous()  # Shift input_ids left
+        #input_ids = input_ids[:, :-1].contiguous()  # Shift input_ids left
+        #labels = input_ids.clone()
 
-        # Calculate and accumulate global token frequencies
-        batch_token_frequencies = self.calculate_global_token_frequencies(input_ids)
-        self.token_frequencies += batch_token_frequencies
+        # Update token frequencies for the current batch
+        with torch.no_grad():
+            batch_token_frequencies = self.calculate_batch_token_frequencies(input_ids)
+            self.token_frequencies.add_(batch_token_frequencies)
+
+        # Increment step counter
+        self.global_step += 1
+
+        # Hook to modify gradients
+        if self.global_step >= self.warmup_steps and not hasattr(self.lm_head.weight, "_hook_registered"):
+            def gradient_weighting_hook(grad):
+
+            # Transfer token frequencies to GPU
+                token_probs = self.token_frequencies.to(grad.device, dtype=grad.dtype, non_blocking=True)
+                token_probs = token_probs ** 0.75
+                token_probs /= token_probs.sum()
+
+            # Compute scaling factor
+                scaling_factor = self.gradient_weighting_schedule()
+
+            # Identify non-target tokens
+                target_tokens = labels.reshape(-1)
+                target_mask = torch.zeros_like(grad, dtype=torch.bool)
+                target_mask[target_tokens] = True
+                target_mask[-1, :] = False
+                non_target_mask = ~target_mask
+
+            # Mask non-target gradients
+                masked_grad = grad.clone()
+                masked_grad[non_target_mask] *= token_probs.unsqueeze(1).expand_as(grad)[non_target_mask]
+
+            # Blend gradients
+                grad = (1 - scaling_factor) * grad + scaling_factor * masked_grad
+                return grad
+
+        # Register hook
+            self.lm_head.weight.register_hook(lambda grad: gradient_weighting_hook(grad.detach()))
+            self.lm_head.weight._hook_registered = True
 
         # Forward pass
         outputs = super().forward(input_ids=input_ids, *args, **kwargs)
-
-        # Hook to modify gradients of the output embeddings
-        def gradient_weighting_hook(grad):
-            # Apply smoothing to global token frequencies
-            token_probs = self.token_frequencies ** 0.75
-            token_probs /= token_probs.sum()
-
-            # Reshape grad_weights to match grad dimensions
-            grad_weights = token_probs.view(-1, 1).expand(-1, grad.size(1))
-
-            # Apply gradient weighting schedule
-            grad_weights = grad_weights.clone() * self.gradient_weighting_schedule()
-
-
-            # Ensure target tokens' gradients are not scaled
-            target_tokens = labels.reshape(-1)
-            target_mask = torch.zeros_like(grad, dtype=torch.bool)
-            target_mask[target_tokens] = True
-
-            # Apply weights to non-target tokens only
-            non_target_mask = ~target_mask
-            grad[non_target_mask] *= grad_weights[non_target_mask]
-
-            return grad
-
-        self.lm_head.weight.register_hook(gradient_weighting_hook)
         return outputs
 
     @classmethod
-    def from_config(cls, config, vocab_size, num_tokens_to_update, torch_dtype=None, attn_implementation=None, max_steps=10000):
+    def from_config(cls, config, vocab_size, training_args, torch_dtype=None, attn_implementation=None, max_steps=100000):
         model = AutoModelForCausalLM.from_config(
             config=config,
             torch_dtype=torch_dtype,
             attn_implementation=attn_implementation,
         )
-        return cls(model.config, vocab_size, num_tokens_to_update, max_steps=max_steps)
+        return cls(model.config, vocab_size, training_args, max_steps=max_steps)
+
+
 
     
-def initialized_model_proposed_method(attn_implementation, torch_dtype, tokenizer, num_tokens_update):
+def initialized_model_proposed_method(attn_implementation, torch_dtype, tokenizer, training_args):
     """Initialize a LigerKernel-based model from scratch with frequency-based selective updates."""
 
     config_dict = {
@@ -346,7 +360,7 @@ def initialized_model_proposed_method(attn_implementation, torch_dtype, tokenize
         config_dict=config_dict
     )
 
-    model = OutputEmbeddingSelectiveUpdate.from_config(config, config.vocab_size, num_tokens_update,torch_dtype=torch_dtype,
+    model = OutputEmbeddingSelectiveUpdate.from_config(config, config.vocab_size, training_args=training_args, max_steps=training_args.max_steps ,torch_dtype=torch_dtype,
         attn_implementation=attn_implementation)
 
     return model
