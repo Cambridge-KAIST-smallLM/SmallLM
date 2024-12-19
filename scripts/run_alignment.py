@@ -86,6 +86,7 @@ def main(model_args, data_args, training_args, training_type: str, loss_type_tes
     logger.info(f"Training/evaluation parameters {training_args}")
 
     # Load dataset
+    #dataset = load_dataset(data_args.dataset_name, cache_dir=model_args.cache_dir, split=data_args.dataset_split, data_files=data_args.dataset_file_list)
     dataset = load_dataset(data_args.dataset_name, cache_dir=model_args.cache_dir, split=data_args.dataset_split)
     if hasattr(dataset, "shuffle"):
         pass
@@ -112,7 +113,7 @@ def main(model_args, data_args, training_args, training_type: str, loss_type_tes
         if training_type == "PRETRAIN":
             model = initialize_model(model_args.attn_implementation, torch_dtype, tokenizer)
         if training_type == "PROPOSED":
-            model = initialized_model_proposed_method(model_args.attn_implementation, torch_dtype, tokenizer, num_tokens_update=500)
+            model = initialized_model_proposed_method(model_args.attn_implementation, torch_dtype, tokenizer, training_args)
         else:
             model = model_wrapper.from_pretrained(
                 model_args.model_name_or_path,
