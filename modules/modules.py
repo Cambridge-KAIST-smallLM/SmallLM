@@ -200,10 +200,6 @@ class ModelArguments:
         default=True,
         metadata={"help": "Use liger kernel for alignment tuning."}
     )
-    num_tokens_update: Optional[int] = field(
-        default=500,
-        metadata={"help": "How many number of tokens are updated in output embedding."}
-    )
 
     def __post_init__(self):
         if self.load_in_8bit and self.load_in_4bit:
