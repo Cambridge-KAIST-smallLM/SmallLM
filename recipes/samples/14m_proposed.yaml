@@ -4,7 +4,6 @@ model_revision: main
 torch_dtype: bfloat16
 attn_implementation: flash_attention_2
 use_liger_kernel: true
-num_tokens_update: 500
 
 # Data training arguments
 dataset_name: pico-lm/pretokenized-dolma
