@@ -290,9 +290,8 @@ class OutputEmbeddingSelectiveUpdate(LlamaForCausalLM):
                 scaling_factor = self.gradient_weighting_schedule()
 
             # Identify non-target tokens
-                target_tokens = labels.reshape(-1)
-
-
+            
+                #target_tokens = labels.reshape(-1)
                 #target_mask = torch.zeros_like(grad, dtype=torch.bool)
                 #target_mask[target_tokens] = True
                 #target_mask[-1, :] = False
