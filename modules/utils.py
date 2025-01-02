@@ -291,14 +291,18 @@ class OutputEmbeddingSelectiveUpdate(LlamaForCausalLM):
 
             # Identify non-target tokens
                 target_tokens = labels.reshape(-1)
-                target_mask = torch.zeros_like(grad, dtype=torch.bool)
-                target_mask[target_tokens] = True
-                target_mask[-1, :] = False
-                non_target_mask = ~target_mask
+
+
+                #target_mask = torch.zeros_like(grad, dtype=torch.bool)
+                #target_mask[target_tokens] = True
+                #target_mask[-1, :] = False
+                #non_target_mask = ~target_mask
+                
 
             # Mask non-target gradients
                 masked_grad = grad.clone()
-                masked_grad[non_target_mask] *= token_probs.unsqueeze(1).expand_as(grad)[non_target_mask]
+                #masked_grad[non_target_mask] *= token_probs.unsqueeze(1).expand_as(grad)[non_target_mask]
+                masked_grad *= token_probs.unsqueeze(1).expand_as(grad)
 
             # Blend gradients
                 grad = (1 - scaling_factor) * grad + scaling_factor * masked_grad
