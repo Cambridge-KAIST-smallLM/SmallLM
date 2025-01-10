@@ -36,7 +36,7 @@ per_device_train_batch_size: 64
 remove_unused_columns: true
 report_to: none ## change to 'wandb' if you use wandb
 save_strategy: "steps"
-save_steps: 500
+save_steps: 1000
 
 seed: 42
 warmup_steps: 1000
