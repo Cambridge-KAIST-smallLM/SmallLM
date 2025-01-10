@@ -20,6 +20,7 @@ import numpy as np
 import torch.nn as nn
 from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM, LlamaConfig, LlamaForCausalLM
 from typing import Any, List, Literal
+import json
 
 
 DEFAULT_CHAT_TEMPLATE = "{% for message in messages %}\n{% if message['role'] == 'user' %}\n{{ '<|user|>\n' + message['content'] + eos_token }}\n{% elif message['role'] == 'system' %}\n{{ '<|system|>\n' + message['content'] + eos_token }}\n{% elif message['role'] == 'assistant' %}\n{{ '<|assistant|>\n'  + message['content'] + eos_token }}\n{% endif %}\n{% if loop.last and add_generation_prompt %}\n{{ '<|assistant|>' }}\n{% endif %}\n{% endfor %}"
@@ -179,41 +180,18 @@ def initialize_reward_model_head(model: AutoModel, tokenizer: AutoTokenizer):
 
     return model, tokenizer
 
-def initialize_model(attn_implementation, torch_dtype, tokenizer):
-    # Define the configuration
-    config_dict = {
-        "_name_or_path": "JW17/SmolLM-14m-v0.1",
-        "architectures": ["LlamaForCausalLM"],
-        "attention_bias": False,
-        "attention_dropout": 0.0,
-        "bos_token_id": 0,
-        "eos_token_id": 0,
-        "hidden_act": "gelu",
-        "hidden_size": 128,
-        "initializer_range": 0.02,
-        "intermediate_size": 512,
-        "is_llama_config": True,
-        "max_position_embeddings": 2048,
-        "model_type": "llama",
-        "num_attention_heads": 4,
-        "num_hidden_layers": 6,
-        "num_key_value_heads": 4,
-        "pretraining_tp": 1,
-        "rms_norm_eps": 1e-05,
-        "rope_interleaved": False,
-        "rope_scaling": None,
-        "rope_theta": 100000,
-        "tie_word_embeddings": False,
-        "torch_dtype": "bfloat16",
-        "use_cache": True,
-        "vocab_size": tokenizer.vocab_size,
-        "flash_attn": True
-    }
+def load_config(file_path="config.json"):
+    """Load model configuration from a JSON file."""
+    with open(file_path, "r") as f:
+        return json.load(f)
+
+def initialize_model(attn_implementation, torch_dtype, tokenizer, config_path="./recipes/config/config.json"):
+    """Initialize model with configuration loaded from a JSON file."""
+    config_dict = load_config(config_path)
+    config_dict["vocab_size"] = tokenizer.vocab_size  # Ensure vocab_size is updated
 
     # Create config object
-    config = LlamaConfig.from_dict(
-        config_dict=config_dict
-    )
+    config = LlamaConfig.from_dict(config_dict)
 
     # Initialize model with custom config
     model = AutoModelForCausalLM.from_config(
@@ -224,147 +202,91 @@ def initialize_model(attn_implementation, torch_dtype, tokenizer):
 
     return model
 
-
 class OutputEmbeddingSelectiveUpdate(LlamaForCausalLM):
-    def __init__(self, config, vocab_size, training_args, max_steps=100000):
+    def __init__(self, config, vocab_size, training_args, lambda_global=0.01, lambda_per_token=0.01, lambda_norm_gap=0.01, lambda_norm_penalty=0.01):
         super().__init__(config)
-
-        # Store token frequencies on CPU to save GPU memory
-        self.token_frequencies = torch.zeros(vocab_size, dtype=torch.float32, device="cpu")
-        self.global_step = 0  # Initialize global_step
-        self.max_steps = max_steps  # Total training steps
-
-        # Extract warmup_steps from training_args
-        self.warmup_steps = training_args.warmup_steps or int(0.1 * max_steps)
-
-    def set_step(self, step):
+        self.lambda_global = lambda_global  # Regularization strength for global mean centering
+        self.lambda_per_token = lambda_per_token  # Regularization strength for per-token mean bias
+        self.lambda_norm_gap = lambda_norm_gap  # Regularization for norm gap between frequent and infrequent tokens
+        self.lambda_norm_penalty = lambda_norm_penalty  # Regularization for overall token norm growth
+    
+    def compute_embedding_mean(self):
         """
-        Update the current global step in the model.
+        Computes the mean of the embedding weights.
         """
-        self.global_step = step
-
-    def calculate_batch_token_frequencies(self, input_ids):
+        return self.get_input_embeddings().weight.mean(dim=0)
+    
+    def compute_per_token_mean_bias(self):
         """
-        Calculate token frequencies for the current batch.
+        Computes the per-token mean bias.
         """
-        batch_tokens = input_ids.detach().to("cpu").reshape(-1)
-        batch_token_counts = torch.bincount(batch_tokens, minlength=self.token_frequencies.size(0)).float()
-        return batch_token_counts
-
-    def gradient_weighting_schedule(self):
+        return self.get_input_embeddings().weight.mean(dim=-1)
+    
+    def compute_embedding_norms(self):
         """
-        Exponential schedule: Gradually increase masking after the warm-up phase.
+        Computes the L2 norm of each token embedding.
         """
-
-        # Progress after warm-up
-        progress = (self.global_step - self.warmup_steps) / (self.max_steps - self.warmup_steps)
-        #k = 3   Exponential steepness
-        progress_tensor = torch.tensor(progress, dtype=torch.float32, device="cuda" if torch.cuda.is_available() else "cpu")
-        scaling_factor = torch.clamp(progress_tensor, min=0.0, max=1.0)
-        #scaling_factor = 1 - torch.exp(-k * progress_tensor)
-        return scaling_factor
-
+        return torch.norm(self.get_input_embeddings().weight, p=2, dim=-1)
+    
+    def compute_norm_gap_penalty(self):
+        """
+        Penalizes the standard deviation of token embedding norms to reduce norm gap between frequent and infrequent tokens.
+        """
+        norms = self.compute_embedding_norms()
+        return self.lambda_norm_gap * torch.std(norms)
+    
+    def compute_norm_penalty(self):
+        """
+        Penalizes excessive token norm growth by minimizing the mean norm value.
+        """
+        norms = self.compute_embedding_norms()
+        return self.lambda_norm_penalty * torch.mean(norms)
+    
     def forward(self, input_ids, *args, **kwargs):
-        labels = input_ids[:, 1:].contiguous()  # Next-token labels
-        #input_ids = input_ids[:, :-1].contiguous()  # Shift input_ids left
-        #labels = input_ids.clone()
-
-        # Update token frequencies for the current batch
-        with torch.no_grad():
-            batch_token_frequencies = self.calculate_batch_token_frequencies(input_ids)
-            self.token_frequencies.add_(batch_token_frequencies)
-
-        # Increment step counter
-        self.global_step += 1
-
-        # Hook to modify gradients
-        if self.global_step >= self.warmup_steps and not hasattr(self.lm_head.weight, "_hook_registered"):
-            def gradient_weighting_hook(grad):
-
-            # Transfer token frequencies to GPU
-                token_probs = self.token_frequencies.to(grad.device, dtype=grad.dtype, non_blocking=True)
-                #token_probs = token_probs ** 0.75
-                token_probs /= token_probs.sum()
-
-            # Compute scaling factor
-                scaling_factor = self.gradient_weighting_schedule()
-
-            # Identify non-target tokens
-            
-                #target_tokens = labels.reshape(-1)
-                #target_mask = torch.zeros_like(grad, dtype=torch.bool)
-                #target_mask[target_tokens] = True
-                #target_mask[-1, :] = False
-                #non_target_mask = ~target_mask
-                
-
-            # Mask non-target gradients
-                masked_grad = grad.clone()
-                #masked_grad[non_target_mask] *= token_probs.unsqueeze(1).expand_as(grad)[non_target_mask]
-                masked_grad *= token_probs.unsqueeze(1).expand_as(grad)
-
-            # Blend gradients
-                grad = (1 - scaling_factor) * grad + scaling_factor * masked_grad
-                return grad
-
-        # Register hook
-            self.lm_head.weight.register_hook(lambda grad: gradient_weighting_hook(grad.detach()))
-            self.lm_head.weight._hook_registered = True
-
         # Forward pass
         outputs = super().forward(input_ids=input_ids, *args, **kwargs)
+        
+        # Compute zero-mean regularization loss
+        embedding_mean = self.compute_embedding_mean()
+        global_reg_loss = self.lambda_global * torch.norm(embedding_mean, p=2) ** 2
+        
+        # Compute per-token mean bias regularization loss
+        per_token_bias = self.compute_per_token_mean_bias()
+        per_token_reg_loss = self.lambda_per_token * torch.mean(torch.abs(per_token_bias))
+        
+        # Compute norm gap and norm penalty losses
+        norm_gap_loss = self.compute_norm_gap_penalty()
+        norm_penalty_loss = self.compute_norm_penalty()
+        
+        # Add regularization terms to total loss if available
+        if outputs.loss is not None:
+            outputs.loss += global_reg_loss + per_token_reg_loss + norm_gap_loss + norm_penalty_loss
+        
         return outputs
 
     @classmethod
-    def from_config(cls, config, vocab_size, training_args, torch_dtype=None, attn_implementation=None, max_steps=100000):
+    def from_config(cls, config, vocab_size, training_args, torch_dtype=None, attn_implementation=None, lambda_global=0.01, lambda_per_token=0.01, lambda_norm_gap=0.01, lambda_norm_penalty=0.01):
         model = AutoModelForCausalLM.from_config(
             config=config,
             torch_dtype=torch_dtype,
             attn_implementation=attn_implementation,
         )
-        return cls(model.config, vocab_size, training_args, max_steps=max_steps)
+        return cls(model.config, vocab_size, training_args, lambda_global=lambda_global, lambda_per_token=lambda_per_token, lambda_norm_gap=lambda_norm_gap, lambda_norm_penalty=lambda_norm_penalty)
 
 
+def initialize_model_auxloss(attn_implementation, torch_dtype, tokenizer, config_path="./recipes/config/config_auxloss.json"):
+    """Initialize model with configuration loaded from a JSON file."""
+    config_dict = load_config(config_path)
+    config_dict["vocab_size"] = tokenizer.vocab_size  # Ensure vocab_size is updated
 
-    
-def initialized_model_proposed_method(attn_implementation, torch_dtype, tokenizer, training_args):
-    """Initialize a LigerKernel-based model from scratch with frequency-based selective updates."""
+    # Create config object
+    config = LlamaConfig.from_dict(config_dict)
 
-    config_dict = {
-        "_name_or_path": "JW17/SmolLM-14m-v0.1",
-        "architectures": ["LlamaForCausalLM"],
-        "attention_bias": False,
-        "attention_dropout": 0.0,
-        "bos_token_id": 0,
-        "eos_token_id": 0,
-        "hidden_act": "gelu",
-        "hidden_size": 128,
-        "initializer_range": 0.02,
-        "intermediate_size": 512,
-        "is_llama_config": True,
-        "max_position_embeddings": 2048,
-        "model_type": "llama",
-        "num_attention_heads": 4,
-        "num_hidden_layers": 6,
-        "num_key_value_heads": 4,
-        "pretraining_tp": 1,
-        "rms_norm_eps": 1e-05,
-        "rope_interleaved": False,
-        "rope_scaling": None,
-        "rope_theta": 100000,
-        "tie_word_embeddings": False,
-        "torch_dtype": "bfloat16",
-        "use_cache": True,
-        "vocab_size": tokenizer.vocab_size,
-        "flash_attn": True
-    }
-
-    config = LlamaConfig.from_dict(
-        config_dict=config_dict
-    )
-
-    model = OutputEmbeddingSelectiveUpdate.from_config(config, config.vocab_size, training_args=training_args, max_steps=training_args.max_steps ,torch_dtype=torch_dtype,
+    # Initialize model with custom config
+    model = OutputEmbeddingSelectiveUpdate.from_config(config, config.vocab_size, training_args=training_args ,torch_dtype=torch_dtype,
         attn_implementation=attn_implementation)
 
     return model
+    
+
 

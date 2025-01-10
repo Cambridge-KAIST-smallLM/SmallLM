@@ -6,7 +6,7 @@ attn_implementation: flash_attention_2
 use_liger_kernel: true
 
 # Data training arguments
-dataset_name: pico-lm/pretokenized-dolma-tinsy
+dataset_name: pico-lm/pretokenized-dolma
 dataset_split: 
 - train
 preprocessing_num_workers: 32
