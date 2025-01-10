@@ -2,7 +2,16 @@
 
 ![Proof HTML](https://github.com/Cambridge-KAIST-smallLM/demo-repository/actions/workflows/proof-html.yml/badge.svg)
 
-# Welcome to your organization's demo respository
-This code repository (or "repo") is designed to demonstrate the best GitHub has to offer with the least amount of noise.
+Install 
 
-The repo includes an `index.html` file (so it can render a web page), two GitHub Actions workflows, and a CSS stylesheet dependency.
+```bash
+pip install -r requirements.txt
+```
+
+5 Experiments needed to run forward
+
+(config_dict file in recipes/config directory, bash file in run directory, yaml file in recipes/sample directory
+
+1. (config_tied_135m.json, train.sh, 14m.yaml) 2. (config_untied_135m.json, train.sh, 14m.yaml) 3. (config_tied_110m.json, train.sh, 14m.yaml) 4. (config_tied_110m.json, proposed,sh, 14m_proposed.sh) 5. (config_tied_110m.json, zloss.sh, 14m.yaml)
+
+   
