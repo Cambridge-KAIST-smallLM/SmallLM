@@ -20,6 +20,8 @@ pip install -r requirements.txt
 
 When you run each experiments, make sure that you change the name of output directory in 14m.yaml or 14m_proposed.yaml file. 
 
+Also, you should change config file name to config.json when running experiment. ex) config_tied_135m.json -> config.json
+
 After fininsh running experiments, please run token_embedding_statistics.py
 
 
