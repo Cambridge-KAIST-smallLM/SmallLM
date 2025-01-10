@@ -16,7 +16,7 @@ def liger_cross_entropy_z_loss(
     reduce=None,
     reduction: str = "mean",
     label_smoothing: float = 0.0,
-    lse_square_scale: float = -1e-4,
+    lse_square_scale: float = 1e-4,
     softcap: Optional[float] = None,
     return_z_loss: bool = False,
 ):
@@ -36,7 +36,7 @@ class LigerCrossEntropyLosswithZ(torch.nn.Module):
     def __init__(
         self,
         ignore_index: int = -100,
-        lse_square_scale: float = -1e-4,
+        lse_square_scale: float = 1e-4,
         label_smoothing: float = 0.0,
         reduction: str = "mean",
         softcap: Optional[float] = None,
