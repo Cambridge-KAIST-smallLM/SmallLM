@@ -41,7 +41,7 @@ from modules import (
     DEFAULT_CHAT_TEMPLATE,
     initialize_model,
     apply_liger_kernel_to_llama_with_z_loss,
-    initialized_model_proposed_method
+    initialize_model_auxloss
     
 )
 
@@ -113,15 +113,7 @@ def main(model_args, data_args, training_args, training_type: str, loss_type_tes
         if training_type == "PRETRAIN":
             model = initialize_model(model_args.attn_implementation, torch_dtype, tokenizer)
         if training_type == "PROPOSED":
-            model = initialized_model_proposed_method(model_args.attn_implementation, torch_dtype, tokenizer, training_args)
-        else:
-            model = model_wrapper.from_pretrained(
-                model_args.model_name_or_path,
-                cache_dir=model_args.cache_dir,
-                attn_implementation=model_args.attn_implementation,
-                torch_dtype=torch_dtype,
-                use_cache=False if training_args.gradient_checkpointing else True
-            )
+            model = initialize_model_auxloss(model_args.attn_implementation, torch_dtype, tokenizer, training_args)
         if training_type.lower() == 'dpo':
             ref_model = model_wrapper.from_pretrained(
                 model_args.model_name_or_path,
