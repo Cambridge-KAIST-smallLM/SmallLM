@@ -16,6 +16,7 @@ from .utils import (
     initialize_reward_model_head,
     initialize_model_auxloss
 )
+from .liger_kernel.llama import lce_forward_with_zloss
 from .liger_kernel.functions import liger_cross_entropy_z_loss, LigerCrossEntropyLosswithZ
 from .liger_kernel.apply_liger import apply_liger_kernel_to_llama_with_z_loss
 
@@ -36,5 +37,6 @@ __all__ = [
     "liger_cross_entropy_z_loss",
     "apply_liger_kernel_to_llama_with_z_loss",
     "LigerCrossEntropyLosswithZ",
-    "initialize_model_auxloss"
+    "initialize_model_auxloss",
+    "lce_forward_with_zloss"
 ]

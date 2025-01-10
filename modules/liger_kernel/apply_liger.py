@@ -43,7 +43,11 @@ from liger_kernel.transformers.swiglu import (
     LigerPhi3SwiGLUMLP,
     LigerSwiGLUMLP,
 )
-from modules import liger_cross_entropy_z_loss, LigerCrossEntropyLosswithZ
+from modules import (
+    liger_cross_entropy_z_loss, 
+    LigerCrossEntropyLosswithZ, 
+    lce_forward_with_zloss
+)
 
 transformer_version = version.parse(transformers.__version__)
 
@@ -130,7 +134,7 @@ def apply_liger_kernel_to_llama_with_z_loss(
 
     if fused_linear_cross_entropy:
         if transformer_version >= version.parse(SUPPORTED_TRANSFORMER_VERSION):
-            modeling_llama.LlamaForCausalLM.forward = llama_lce_forward
+            modeling_llama.LlamaForCausalLM.forward = lce_forward_with_zloss
         else:  # if version < 4.46.1
             logger.warning(TRANSFORMER_DEPRECATION_WARNING)
             modeling_llama.LlamaForCausalLM.forward = llama_lce_forward_deprecated

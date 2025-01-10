@@ -105,7 +105,7 @@ def main(model_args, data_args, training_args, training_type: str, loss_type_tes
     )
 
     if training_type.lower() in ['pretrain', 'proposed'] and loss_type_test.lower() == 'zloss':
-        apply_liger_kernel_to_llama_with_z_loss(cross_entropy=True, fused_linear_cross_entropy=False)
+        apply_liger_kernel_to_llama_with_z_loss(cross_entropy=False, fused_linear_cross_entropy=True)
 
     # Load Model
     model_wrapper = AutoLigerKernelForCausalLM if model_args.use_liger_lm else AutoModelForCausalLM
