@@ -113,7 +113,7 @@ def main(model_args, data_args, training_args, training_type: str, loss_type_tes
         if training_type == "PRETRAIN":
             model = initialize_model(model_args.attn_implementation, torch_dtype, tokenizer)
         if training_type == "PROPOSED":
-            model = initialize_model_auxloss(model_args.attn_implementation, torch_dtype, tokenizer, training_args)
+            model = initialize_model_auxloss(model_args.attn_implementation, torch_dtype, tokenizer)
         if training_type.lower() == 'dpo':
             ref_model = model_wrapper.from_pretrained(
                 model_args.model_name_or_path,
