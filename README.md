@@ -26,7 +26,7 @@ Also, you should change config file name to config.json when running experiment.
 
 After fininsh running experiments, please run token_embedding_statistics.py. When running algorithm only check line 63, output dir address
 
-each device can take 64 batch size so please use accum: 4 so that 64*4*8 = 2048
+each device can take 64 batch size so please use accum: 4 so that 64 * 4 * 8 = 2048
 
 
    
