@@ -12,11 +12,11 @@ pip install -r requirements.txt
 
 (config_dict file in recipes/config directory, bash file in run directory, yaml file in recipes/sample directory)
 
-1.  (config_tied_135m.json, train.sh, 14m.yaml)
-2.  (config_untied_135m.json, train.sh, 14m.yaml)
-3.  (config_tied_110m.json, train.sh, 14m.yaml)
-4.  (config_tied_110m.json, proposed,sh, 14m_proposed.yaml)
-5.  (config_tied_110m.json, zloss.sh, 14m.yaml)
+1.  (config_tied_162m.json, train.sh, 14m.yaml)
+2.  (config_untied_162m.json, train.sh, 14m.yaml)
+3.  (config_tied_123m.json, train.sh, 14m.yaml)
+4.  (config_tied_123m.json, proposed,sh, 14m_proposed.yaml)
+5.  (config_tied_123m.json, zloss.sh, 14m.yaml)
 
 When you run each experiments, make sure that you change the name of output directory in 14m.yaml or 14m_proposed.yaml file. 
 
