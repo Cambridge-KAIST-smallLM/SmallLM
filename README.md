@@ -16,6 +16,7 @@ pip install -r requirements.txt
 2.  (config_untied_162m.json, train.sh, 14m.yaml)
 3.  (config_tied_123m.json, train.sh, 14m.yaml)
 4.  (config_tied_123m.json, zloss.sh, 14m.yaml)
+5.  (config_untied_162m.json, zloss.sh, 14m.yaml)
 
 When you run each experiments, make sure that you change the name of output directory in 14m.yaml or 14m_proposed.yaml file. 
 
