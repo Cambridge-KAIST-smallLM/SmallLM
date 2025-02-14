@@ -2,10 +2,11 @@
 
 Semantic Similarity is defined in various standard evaluation metrics: 
 
-- SimLex999: nouns, verbs, adjectives
-- SimVerb3500 (lots of verbs)
-- MEN
-- Card660 
+- SimLex999: nouns, verbs, adjectives (mainly for nouns and adjectives) [0,10] Scale I think??. See https://fh295.github.io/simlex.html. 
+- SimVerb3500 (lots of verbs) [0, 10] scale. 
+- Card660 [0, 10]
+
+Some other datasets (historic value) are also included. 
 
 These define word pairs grouped based on semantic similarity with a gold correlation score based on human annotators. 
 
