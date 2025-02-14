@@ -5,7 +5,7 @@ Semantic Similarity is defined in various standard evaluation metrics:
 - SimLex999: nouns, verbs, adjectives
 - SimVerb3500 (lots of verbs)
 - MEN
-- Card600
+- Card660 
 
 These define word pairs grouped based on semantic similarity with a gold correlation score based on human annotators. 
 
