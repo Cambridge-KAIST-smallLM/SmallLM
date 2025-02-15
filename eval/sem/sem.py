@@ -61,7 +61,7 @@ noun = df[df["POS"]=="N"]
 verb = df[df["POS"]=="V"]
 adj = df[df["POS"]=="A"]
 gold_scores = list(noun["SimLex999"])
-sims = list(noun["BERT_Score"])
+sims = list(noun["INSERT WHATEVER LIST YOUR SCORES ARE IN"]) #FILTERED BY POS  
 from scipy.stats.stats import pearsonr,spearmanr
 score = spearmanr(gold_scores, sims)[0]
 print(score)
